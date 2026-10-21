@@ -174,3 +174,49 @@ Figures: `q4_masks_tilt_height.png`, `q4_masks_summary.png`.
 - **Full mask, local vs world**: identical results. With all components enforced and the same gains, the task error (position error and $\log_3(R_{ref}^\top R)$) is the same vector expressed in different axes, and its weighted norm does not depend on the axes. The frame matters only when the mask (or the gains) differ between components.
 
 **Conclusion**: the waiter requirement must be enforced with mask `[0, 0, 1, 1, 1, 0]` in a **world-aligned** frame: it keeps the tray horizontal at constant height and, by not constraining what is not needed, leaves more freedom to the CoM task.
+
+---
+
+# Question 5 — Heavy trays
+
+## Part A: 5 kg tray (`compare_payloads.py`)
+
+Settings as in `compare_payloads.py`: full mask, local frame, `w_hand = 100`, `transition_time = 0.1`; 5 kg tray with torque limits ×4, compared with the empty tray (0.5 kg, default limits). The trajectories of `compare_payloads.simulate()` are re-used in `experiments.py q5` to compute the indicators (the Meshcat replay of the script shows the same motion).
+
+Differences 5 kg − empty tray during the walk:
+
+| | x (forward) | y (lateral, + = left) | z |
+| --- | --- | --- | --- |
+| Pelvis, mean (min / max) | **−23.0 mm** (−26.1 / −20.4) | **+34.9 mm** (+31.9 / +38.8) | −3.3 mm |
+| Total CoM (robot + tray), mean (max \|·\|) | +1.3 mm (2.8) | −2.4 mm (4.5) | +0.2 mm (3.3) |
+| CoM of the robot alone, mean | −17.6 mm | +26.9 mm | −1.1 mm |
+
+Hand with respect to the pelvis (mean): (197, −310, −77) mm with 5 kg, (174, −275, −80) mm with the empty tray: the tray is in front of and to the right of the pelvis.
+
+Figure: `q5_heavy_tray_pelvis_com.png`.
+
+**Posture change**: with the 5 kg tray the robot shifts its pelvis by ≈ **3.5 cm to the left** and ≈ **2.3 cm backwards** for the whole walk (also before starting), i.e. it leans away from the tray, like a person carrying a heavy suitcase with one hand. The **total CoM is unchanged** (differences of a few mm, as in the empty-tray walk).
+
+**Why**: the payload is added to the model of the hand, so TSID knows it and the CoM task controls the CoM of robot + tray, with the same reference as before (the walking reference, consistent with the CoP inside the support feet). The tray is in front-right of the body: 5 kg at ~0.31 m to the right of the pelvis would move the total CoM by several cm. To keep the total CoM on its reference the controller must move the mass of the robot in the opposite direction: the CoM of the robot alone moves by +2.7 cm left and −1.8 cm back, which is obtained by moving the pelvis (the heaviest part of the body) left and back. The hand task (`w_hand = 100`) keeps the tray where it should be in the world, so the counterbalancing is done by the rest of the body; the posture task, with the lowest weight (`w_posture = 1e-2`), is the one that gives way.
+
+## Part B: 2 kg tray, nominal torque limits
+
+`payload_mass = 2`, `tau_max_scaling = 1.45` (default), `transition_time = 0.1`, full mask, local frame.
+
+| | Walk | Tray tilt max | Hand height range | Hand position error max | CoM error RMS / max | Joint at the limit |
+| --- | --- | --- | --- | --- | --- | --- |
+| Empty tray, `w_hand = 100` (reference) | completed | 0.00° | 0.2 mm | 0.4 mm | 7.6 / 16.0 mm | – (max 0.94) |
+| 2 kg, `w_hand = 100` | completed | 0.18° | 13.2 mm | **32.0 mm** | 8.5 / 15.7 mm | **RWristPitch 1.00 (1.24 s at the limit)**, RKneePitch 0.99 |
+| 2 kg, hard constraint (`hand_priority = 0`) | **QP infeasible at t = 2.23 s** | – | – | – | – | RWristPitch 1.00, RKneePitch 0.91 just before |
+
+Figures: `q5_torques_2kg_weighted_vs_hard.png`, `q5_tray_2kg_weighted.png`.
+
+**Conflicting constraint**: the **torque bounds** (`TaskActuationBounds`, level 0), in particular the right wrist pitch `RWristPitch`, the joint of the hand carrying the tray. Its torque limit is very small (0.60 Nm × 1.45 = 0.87 Nm), and with 2 kg on the hand (≈ 20 N at the centre of the hand) it is already at ~90% of the limit when standing; during the first single support (on the right foot) it reaches −1.0, and at t = 2.23 s there is no acceleration that keeps the hand exactly on its reference (hard equality) while respecting the wrist torque bound (and the right knee at 91%): the QP has no solution and the controller stops.
+
+**What the weighted task sacrifices**: with `w_hand = 100` the hand task is a cost, so when the wrist saturates (1.24 s in total, around the double support phases and the start of the left single supports) the QP gives up part of the hand tracking instead of violating the torque bound: the hand drops by up to **13 mm** at every step (position error up to 32 mm, against 0.4 mm with the empty tray) and the tray tilts by 0.18°, then the hand returns to the reference. The CoM tracking is also slightly worse (8.5 vs 7.6 mm RMS). The walk is completed and the tray stays essentially horizontal.
+
+## When a task should be a hard constraint and when a weighted cost
+
+- **Hard constraints** (level 0) for what is physically mandatory and **always feasible**: dynamics, contacts, torque and joint limits. If two hard constraints can become incompatible, the QP becomes infeasible and the controller has no output, which on a real robot means falling.
+- **Weighted costs** for objectives that are desirable but can be relaxed when they conflict with the physics or with more important objectives (here: hand pose, posture, CoM tracking). A large weight (e.g. 100) gives an almost strict priority when the task is feasible, but lets the QP degrade the task gracefully when it is not.
+- A task should be made a hard constraint only if it is guaranteed to be compatible with all the other constraints in every situation (e.g. a light payload with ample torque margin); otherwise it is safer as a high-weight cost.

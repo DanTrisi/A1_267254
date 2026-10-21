@@ -427,8 +427,126 @@ def q4():
 
 
 # ------------------------------------------------------------------------------------------------
+# Q5 - heavy trays
+# ------------------------------------------------------------------------------------------------
+def fig_normalized_torques(logs, title, threshold=0.8):
+    '''Normalized torques |tau|/tau_max of the joints that exceed the threshold in at least one log.'''
+    fig, ax = plut.create_empty_figure(len(logs), 1)
+    fig.set_size_inches(12, 3.5 * len(logs))
+    ax = np.atleast_1d(ax)
+    for a, (lab, log) in zip(ax, logs.items()):
+        N = log["N"]
+        stop = N if log["fail"] is None else int(round(log["fail"] / log["dt"]))
+        t = time_axis(log)[:stop]
+        for j, name in enumerate(log["joint_names"]):
+            r = log["tau"][j, :stop] / log["tau_max"][j]
+            if np.max(np.abs(r)) > threshold:
+                a.plot(t, r, label=name)
+        a.axhline(1.0, color="k", linestyle=":")
+        a.axhline(-1.0, color="k", linestyle=":")
+        if log["fail"] is not None:
+            a.axvline(log["fail"], color="r", linestyle="--", label="QP infeasible")
+        a.set_ylabel("$\\tau/\\tau_{max}$\n" + lab)
+        a.set_xlim(0, time_axis(log)[-1])
+        shade_phases(a, log)
+        legend_out(a)
+    ax[-1].set_xlabel("Time [s]")
+    fig.suptitle(title + " (joints above %d%% of the limit; grey: single support)" % (100 * threshold))
+    return fig
+
+
+def q5():
+    import compare_payloads
+    import pinocchio as pin
+
+    # Part A: 5 kg tray (torque limits x4) vs empty tray, as in compare_payloads.py
+    runs = {k: compare_payloads.simulate(m, compare_payloads.TAU_MAX_SCALING[k])
+            for k, m in compare_payloads.PAYLOADS.items()}
+    n = min(len(runs["solid"][1]), len(runs["ghost"][1]))
+    dt = runs["solid"][0].dt
+    t = np.arange(n) * dt - runs["solid"][0].T_pre
+    Q5, com5 = runs["solid"][1][:n], runs["solid"][2][:n]
+    Q0, com0 = runs["ghost"][1][:n], runs["ghost"][2][:n]
+    walking = t >= 0
+    print("\n=== Q5 part A: 5 kg tray vs empty tray (differences 5 kg - empty, during the walk)")
+    for i, a in enumerate("xyz"):
+        d_pel, d_com = Q5[walking, i] - Q0[walking, i], com5[walking, i] - com0[walking, i]
+        print("  %s: pelvis mean %+6.1f mm (min %+6.1f, max %+6.1f) | total CoM mean %+5.1f mm (max |.| %4.1f)" % (
+            a, 1e3 * d_pel.mean(), 1e3 * d_pel.min(), 1e3 * d_pel.max(), 1e3 * d_com.mean(), 1e3 * np.abs(d_com).max()))
+    # CoM of the robot alone (without payload) and position of the hand, to explain the pelvis shift
+    robot = pin.RobotWrapper.BuildFromURDF(romeo_conf.urdf, [romeo_conf.path], pin.JointModelFreeFlyer())
+    m_r, d_r = robot.model, robot.model.createData()
+    hand_id = m_r.getFrameId(romeo_conf.hand_frame_name)
+    def robot_com_and_hand(q):
+        pin.framesForwardKinematics(m_r, d_r, q)
+        return pin.centerOfMass(m_r, d_r, q).copy(), d_r.oMf[hand_id].translation.copy()
+    c5, h5 = zip(*[robot_com_and_hand(q) for q in Q5[walking][::25]])
+    c0, h0 = zip(*[robot_com_and_hand(q) for q in Q0[walking][::25]])
+    print("  robot-only CoM (5 kg - empty) mean: %s mm" % np.round(1e3 * (np.mean(c5, 0) - np.mean(c0, 0)), 1))
+    print("  hand position relative to the pelvis, mean (5 kg): %s mm, (empty): %s mm" % (
+        np.round(1e3 * np.mean(np.array(h5) - Q5[walking][::25, :3], 0), 1),
+        np.round(1e3 * np.mean(np.array(h0) - Q0[walking][::25, :3], 0), 1)))
+    print("  payload lever: 5 kg tray at %.0f mm lateral from the pelvis -> moment %.1f Nm" % (
+        1e3 * np.mean(np.array(h5)[:, 1] - Q5[walking][::25, 1]), 5 * 9.81 * np.mean(np.array(h5)[:, 1] - Q5[walking][::25, 1])))
+
+    fig1, ax = plut.create_empty_figure(2, 1)
+    fig1.set_size_inches(12, 7)
+    for i, a in zip([1, 0], ax):
+        lab = "lateral (y)" if i == 1 else "forward (x)"
+        a.plot(t, 1e3 * Q5[:, i], "C0", label="pelvis, 5 kg tray")
+        a.plot(t, 1e3 * Q0[:, i], "C0--", label="pelvis, empty tray")
+        a.plot(t, 1e3 * com5[:, i], "C3", label="total CoM, 5 kg tray")
+        a.plot(t, 1e3 * com0[:, i], "C3--", label="total CoM, empty tray")
+        a.set_ylabel("%s position [mm]" % lab)
+        a.grid(True)
+        legend_out(a)
+    ax[1].set_xlabel("Time [s] (0 = start of the walk)")
+    fig1.suptitle("Heavy tray: pelvis and total CoM (robot + tray)")
+
+    # Part B: 2 kg tray, nominal torque limits, weighted hand task vs hard constraint
+    logs, mets = {}, {}
+    for lab, ov in [("w_hand = 100", dict(w_hand=100.0)),
+                    ("hard constraint", dict(w_hand=100.0, hand_priority=0))]:
+        logs[lab], mets[lab], _ = walk("Q5 part B: 2 kg tray, " + lab, payload_mass=2.0, **TRAY_WALK, **ov)
+    # empty tray with w_hand = 100 as a reference for the tray indicators
+    _, m_empty, _ = walk("Q5 part B reference: empty tray, w_hand = 100", w_hand=100.0, **TRAY_WALK)
+    log_w = logs["w_hand = 100"]
+    names = log_w["joint_names"]
+    sat = np.abs(log_w["tau"][:, :log_w["N"]]) / log_w["tau_max"][:, None]
+    for j in np.argsort(-sat.max(1))[:4]:
+        print("  w_hand = 100: %-15s max |tau|/tau_max %.2f, time at the limit %.2f s" % (
+            names[j], sat[j].max(), np.sum(sat[j] > 0.99) * log_w["dt"]))
+    log_h = logs["hard constraint"]
+    if log_h["fail"] is not None:
+        k = int(round(log_h["fail"] / log_h["dt"])) - 1
+        r = np.abs(log_h["tau"][:, k]) / log_h["tau_max"]
+        print("  hard constraint: infeasible at t = %.3f s; joints at the limit just before: %s" % (
+            log_h["fail"], ", ".join("%s (%.2f)" % (names[j], r[j]) for j in np.argsort(-r)[:3])))
+
+    fig2 = fig_normalized_torques({"2 kg, w_hand = 100": log_w, "2 kg, hard constraint": log_h},
+                                  "Normalized joint torques with a 2 kg tray")
+    fig3, ax = plut.create_empty_figure(2, 1)
+    fig3.set_size_inches(12, 7)
+    tt = time_axis(log_w)
+    N = log_w["N"]
+    ax[0].plot(tt, log_w["tray_tilt"][:N], "C0", label="2 kg, w_hand = 100")
+    ax[1].plot(tt, 1e3 * (log_w["hand"][2, :N] - log_w["hand_ref"][2, 0]), "C0", label="2 kg, w_hand = 100")
+    ax[0].set_ylabel("Tray tilt [deg]")
+    ax[1].set_ylabel("Hand height change [mm]")
+    ax[1].set_xlabel("Time [s]")
+    for a in ax:
+        shade_phases(a, log_w)
+        legend_out(a)
+    fig3.suptitle("2 kg tray with the weighted hand task (grey: single support)")
+    print("\n  tray indicators: empty tray w_hand=100: tilt %.2f deg, height range %.1f mm | 2 kg w_hand=100: tilt %.2f deg, height range %.1f mm, hand err max %.1f mm" % (
+        m_empty["tray_tilt_max"], 1e3 * m_empty["hand_z_range"], mets["w_hand = 100"]["tray_tilt_max"],
+        1e3 * mets["w_hand = 100"]["hand_z_range"], 1e3 * mets["w_hand = 100"]["hand_err_max"]))
+    return {"q5_heavy_tray_pelvis_com": fig1, "q5_torques_2kg_weighted_vs_hard": fig2, "q5_tray_2kg_weighted": fig3}
+
+
+# ------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    questions = {"q1": q1, "q2": q2, "q3": q3, "q4": q4}
+    questions = {"q1": q1, "q2": q2, "q3": q3, "q4": q4, "q5": q5}
     if len(sys.argv) != 2 or sys.argv[1] not in questions:
         sys.exit("usage: python3 experiments.py {%s}" % ",".join(questions))
     figures = questions[sys.argv[1]]()
