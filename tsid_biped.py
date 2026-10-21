@@ -315,6 +315,9 @@ class TsidBiped:
     def add_contact_RF(self, transition_time=0.0):
         H_rf_ref = self.robot.framePosition(self.formulation.data(), self.RF)
         self.contactRF.setReference(H_rf_ref)
+        # Q1 fix: removeRigidContact(name, transition_time > 0) ramps the max normal force of this
+        # Contact6d down to 0 and leaves it there; restore the nominal value before re-adding it
+        self.contactRF.setMaxNormalForce(self.conf.fMax)
         if self.conf.w_contact >= 0.0:
             self.formulation.addRigidContact(self.contactRF, self.conf.w_forceRef, self.conf.w_contact, 1)
         else:
@@ -325,6 +328,8 @@ class TsidBiped:
     def add_contact_LF(self, transition_time=0.0):
         H_lf_ref = self.robot.framePosition(self.formulation.data(), self.LF)
         self.contactLF.setReference(H_lf_ref)
+        # Q1 fix: restore the nominal max normal force (ramped to 0 by remove_contact_LF)
+        self.contactLF.setMaxNormalForce(self.conf.fMax)
         if self.conf.w_contact >= 0.0:
             self.formulation.addRigidContact(self.contactLF, self.conf.w_forceRef, self.conf.w_contact, 1)
         else:
