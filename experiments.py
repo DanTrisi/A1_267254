@@ -365,8 +365,70 @@ def q3():
 
 
 # ------------------------------------------------------------------------------------------------
+# Q4 - mask and frame of the tray task
+# ------------------------------------------------------------------------------------------------
+Q4_CASES = [  # (label, mask [x, y, z, rot_x, rot_y, rot_z], local frame)
+    ("full mask, local", [1, 1, 1, 1, 1, 1], True),
+    ("full mask, world", [1, 1, 1, 1, 1, 1], False),
+    ("position only, local", [1, 1, 1, 0, 0, 0], True),
+    ("orientation only, local", [0, 0, 0, 1, 1, 1], True),
+    ("waiter, local", [0, 0, 1, 1, 1, 0], True),
+    ("waiter, world", [0, 0, 1, 1, 1, 0], False),
+]
+
+
+def q4():
+    logs, mets = {}, {}
+    for lab, mask, local in Q4_CASES:
+        logs[lab], mets[lab], conf = walk("Q4 " + lab, w_hand=1.0, hand_mask=np.array(mask, dtype=float),
+                                          hand_local_frame=local, **TRAY_WALK)
+    # orientation of the hand frame w.r.t. the world at the beginning (to interpret the local frame)
+    R = logs["full mask, local"]["tsid_biped"].H_hand_0.rotation
+    print("\nInitial hand frame axes (world coordinates) and angle with the world vertical:")
+    for k, a in enumerate("xyz"):
+        print("  hand %s = %s, %.1f deg from the vertical" % (a, np.round(R[:, k], 3), np.degrees(np.arccos(R[2, k]))))
+
+    shown = ["position only, local", "orientation only, local", "waiter, local", "waiter, world"]
+    styles = ["C1", "C2", "C3--", "C0"]
+    t = time_axis(logs[shown[0]])
+    N = logs[shown[0]]["N"]
+    fig1, ax = plut.create_empty_figure(2, 1)
+    fig1.set_size_inches(12, 7)
+    for lab, st in zip(shown, styles):
+        log = logs[lab]
+        ax[0].plot(t, log["tray_tilt"][:N], st, label=lab)
+        ax[1].plot(t, 1e3 * (log["hand"][2, :N] - log["hand_ref"][2, 0]), st, label=lab)
+    ax[0].set_ylabel("Tray tilt [deg]")
+    ax[1].set_ylabel("Hand height change [mm]")
+    ax[1].set_xlabel("Time [s]")
+    for a in ax:
+        shade_phases(a, logs[shown[0]])
+        legend_out(a)
+    fig1.suptitle("Tray task with different masks and frames (grey: single support)")
+
+    labels = [c[0] for c in Q4_CASES]
+    vals = [("Max tray tilt [deg]", [mets[l]["tray_tilt_max"] for l in labels]),
+            ("Hand height range [mm]", [1e3 * mets[l]["hand_z_range"] for l in labels]),
+            ("CoM error RMS [mm]", [1e3 * mets[l]["com_err_rms"] for l in labels])]
+    fig2, ax = plt.subplots(1, 3, figsize=(15, 5))
+    for a, (name, v) in zip(ax, vals):
+        bars = a.barh(range(len(labels)), v, color=["C7", "C7", "C1", "C2", "C3", "C0"])
+        a.set_yticks(range(len(labels)))
+        a.set_yticklabels(labels if a is ax[0] else [])
+        a.invert_yaxis()
+        a.set_title(name)
+        a.grid(True, axis="x")
+        for b, x in zip(bars, v):
+            a.text(b.get_width(), b.get_y() + b.get_height() / 2, " %.2f" % x if x < 1 else " %.1f" % x,
+                   va="center", fontsize=10)
+    fig2.suptitle("Summary of the tray task variants (waiter mask = [0, 0, 1, 1, 1, 0])")
+    fig2.tight_layout()
+    return {"q4_masks_tilt_height": fig1, "q4_masks_summary": fig2}
+
+
+# ------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    questions = {"q1": q1, "q2": q2, "q3": q3}
+    questions = {"q1": q1, "q2": q2, "q3": q3, "q4": q4}
     if len(sys.argv) != 2 or sys.argv[1] not in questions:
         sys.exit("usage: python3 experiments.py {%s}" % ",".join(questions))
     figures = questions[sys.argv[1]]()

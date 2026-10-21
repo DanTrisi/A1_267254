@@ -140,3 +140,37 @@ Figures: `q3_tray_tilt_hand_tracking.png`, `q3_com_error.png`.
 
 - **Tray and hand**: without the hand task the arm is moved only by the posture task and by the motion of the body, so the tray tilts up to 12.8° and the hand goes up and down by ~10 cm at every step (it follows the lateral and vertical sway of the torso): the glasses would be spilled. With the hand task the tray stays horizontal (0.04°) and the hand tracks its reference within 9 mm (height range 13.5 mm).
 - **CoM tracking gets worse** (RMS 2.9 → 7.1 mm, max 6.8 → 14.4 mm, mostly along y and during single support, `q3_com_error.png`), although the arm and the empty tray are light. The cause is not the mass of the arm but the **kinematic coupling** between the tasks. The pose of the hand depends on the whole kinematic chain from the feet: legs, floating base (pelvis) and torso, i.e. the same DOFs that the CoM task uses to move the CoM. While walking the body has to sway laterally (the CoM moves by ±8 cm along y) and up and down; without the hand task this sway is transmitted to the hand (12.8° tilt, ~10 cm height oscillation). Keeping the hand still in height and orientation requires the robot to counteract the natural motion of its upper body, and these joint accelerations also affect the CoM. The two tasks are weighted cost functions with the **same weight** ($w_{com} = w_{hand} = 1$), so the QP finds a compromise (eq. 2.36): part of the CoM accuracy is sacrificed to keep the hand on its reference. In addition, the hand task is 6-dimensional and constrains many DOFs, leaving less redundancy to the CoM task.
+
+---
+
+# Question 4 — Mask and frame of the tray task
+
+Settings: as in Q3 with `w_hand = 1`; mask order `[x, y, z, rot_x, rot_y, rot_z]`.
+
+## Results
+
+| Case | Max tray tilt | Hand height range | CoM error RMS / max | Max hand position error |
+| --- | --- | --- | --- | --- |
+| Full mask, local | 0.04° | 13.5 mm | 7.1 / 14.4 mm | 8.8 mm |
+| Full mask, world-aligned | 0.04° | 13.5 mm | 7.1 / 14.4 mm | 8.8 mm |
+| Position only `[1,1,1,0,0,0]`, local | **21.88°** | 14.1 mm | 5.3 / 13.3 mm | 8.3 mm |
+| Orientation only `[0,0,0,1,1,1]`, local | 0.02° | **85.5 mm** | 3.1 / 7.2 mm | 86.6 mm |
+| Waiter `[0,0,1,1,1,0]`, local | **8.89°** | **78.4 mm** | 3.9 / 9.2 mm | 70.9 mm |
+| Waiter `[0,0,1,1,1,0]`, world-aligned | **0.03°** | **10.5 mm** | **3.6 / 8.4 mm** | 85.2 mm |
+
+(For reference, without hand task: 12.75°, 97.6 mm, 2.9 / 6.8 mm. All walks are completed. The hand position error is the full 3D error, large whenever x-y are left free, which is not a requirement.)
+
+Initial orientation of the hand frame `RWristPitch` in the world: its x, y, z axes are 140.6°, 102.3° and **53.3°** from the world vertical, i.e. the hand frame is not aligned with the world.
+
+Figures: `q4_masks_tilt_height.png`, `q4_masks_summary.png`.
+
+## Discussion
+
+- **Position only**: the hand point follows its reference (height range 14 mm), but the orientation is free and is moved by the other tasks (posture, CoM): the tray tilts up to **22°**, even more than without the hand task. Controlling the position of a point does not keep a tray horizontal.
+- **Orientation only**: the tray stays horizontal (0.02°), but its position is free: the hand goes up and down by **86 mm** with the sway of the body, as without the hand task. The task constrains only 3 DOFs, so the CoM tracking is almost as good as without the tray task (3.1 mm RMS).
+- **Waiter mask**: the requirement is constant height (z) and horizontal tray (no rotation about the horizontal axes x, y), while horizontal position and rotation about the vertical axis do not matter → mask `[0, 0, 1, 1, 1, 0]`. This requirement is defined **in the world frame**.
+  - **World-aligned frame** (`hand_local_frame = False`): the components of the task error are along the world axes, so the mask selects exactly height and tilt and leaves free exactly horizontal position and yaw. The requirement is met as well as with the full mask (0.03°, 10.5 mm), but with about **half the CoM error** (3.6 vs 7.1 mm RMS): the hand task now constrains only 3 DOFs and conflicts much less with walking.
+  - **Local frame** (`hand_local_frame = True`): the same mask selects components along the **hand axes**, which are tilted with respect to the world (hand z at 53° from the vertical) and rotate with the hand. Then "z" is not the height and "rot_z" is not the rotation about the vertical: leaving rot_z free also leaves free part of the rotation about horizontal axes (tilt), and leaving x-y free also leaves free part of the vertical motion. The tray tilts by **8.9°** and the height changes by **78 mm**: the requirement is not met.
+- **Full mask, local vs world**: identical results. With all components enforced and the same gains, the task error (position error and $\log_3(R_{ref}^\top R)$) is the same vector expressed in different axes, and its weighted norm does not depend on the axes. The frame matters only when the mask (or the gains) differ between components.
+
+**Conclusion**: the waiter requirement must be enforced with mask `[0, 0, 1, 1, 1, 0]` in a **world-aligned** frame: it keeps the tray horizontal at constant height and, by not constraining what is not needed, leaves more freedom to the CoM task.
