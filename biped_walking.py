@@ -106,8 +106,16 @@ def simulate_walking(conf, data=None, viewer=None, verbose=True):
         # reference of the tray (hand) task: keep the initial orientation and height of the hand,
         # and move it horizontally together with the reference of the CoM
         ### TODO ###
+        # x-y: initial hand position + displacement of the CoM reference from its initial value;
+        # z and orientation: the initial ones. Velocity/acceleration: those of the CoM reference
+        # (x-y only), zero before and after the walk (the CoM reference is constant there).
+        k = min(max(i, 0), N - 1)
         hand_pos_ref = H_hand_0.translation.copy()
+        hand_pos_ref[:2] += com_pos_ref[:2, k] - com_pos_ref[:2, 0]
         hand_vel_ref, hand_acc_ref = np.zeros(3), np.zeros(3)
+        if 0 <= i < N:
+            hand_vel_ref[:2] = com_vel_ref[:2, i]
+            hand_acc_ref[:2] = com_acc_ref[:2, i]
         tsid_biped.set_hand_ref(hand_pos_ref, H_hand_0.rotation, hand_vel_ref, hand_acc_ref)
 
         HQPData = tsid_biped.formulation.computeProblemData(t, q, v)

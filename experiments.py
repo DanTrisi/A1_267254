@@ -311,8 +311,62 @@ def q2():
 
 
 # ------------------------------------------------------------------------------------------------
+# Q3 - walking with the tray
+# ------------------------------------------------------------------------------------------------
+TRAY_WALK = dict(tray=True, transition_time=0.1)   # Part 2: default reference file, ramp of Q1 with the fix
+
+
+def com_error(log):
+    '''Horizontal CoM tracking error (x, y) during the walk.'''
+    N = log["N"]
+    return log["com"][:2, :N] - log["com_ref"][:2, :N]
+
+
+def q3():
+    log0, m0, _ = walk("Q3 tray, without hand task (w_hand = 0)", w_hand=0.0, **TRAY_WALK)
+    log1, m1, _ = walk("Q3 tray, with hand task (w_hand = 1)", w_hand=1.0, **TRAY_WALK)
+    for log, lab in [(log0, "w_hand = 0"), (log1, "w_hand = 1")]:
+        e = com_error(log)
+        print("%s: CoM error RMS x %.1f mm, y %.1f mm | max x %.1f mm, y %.1f mm" % (
+            lab, 1e3 * np.sqrt(np.mean(e[0]**2)), 1e3 * np.sqrt(np.mean(e[1]**2)),
+            1e3 * np.max(np.abs(e[0])), 1e3 * np.max(np.abs(e[1]))))
+
+    t = time_axis(log0)
+    N = log0["N"]
+    fig1, ax = plut.create_empty_figure(3, 1)
+    fig1.set_size_inches(12, 9)
+    for log, lab, st in [(log0, "w_hand = 0", "C3--"), (log1, "w_hand = 1", "C0")]:
+        ax[0].plot(t, log["tray_tilt"][:N], st, label=lab)
+        ax[1].plot(t, 1e3 * (log["hand"][2, :N] - log["hand_ref"][2, 0]), st, label=lab)
+        ax[2].plot(t, 1e3 * np.linalg.norm(log["hand"][:, :N] - log["hand_ref"][:, :N], axis=0), st, label=lab)
+    ax[0].set_ylabel("Tray tilt [deg]")
+    ax[1].set_ylabel("Hand height\nchange [mm]")
+    ax[2].set_ylabel("Hand position\nerror [mm]")
+    ax[2].set_xlabel("Time [s]")
+    for a in ax:
+        shade_phases(a, log0)
+        legend_out(a)
+    fig1.suptitle("Walking with the tray: tray tilt and hand tracking (grey: single support)")
+
+    fig2, ax = plut.create_empty_figure(2, 1)
+    fig2.set_size_inches(12, 7)
+    for log, lab, st in [(log0, "w_hand = 0", "C3--"), (log1, "w_hand = 1", "C0")]:
+        e = com_error(log)
+        ax[0].plot(t, 1e3 * e[0], st, label=lab)
+        ax[1].plot(t, 1e3 * e[1], st, label=lab)
+    ax[0].set_ylabel("CoM error x [mm]")
+    ax[1].set_ylabel("CoM error y [mm]")
+    ax[1].set_xlabel("Time [s]")
+    for a in ax:
+        shade_phases(a, log0)
+        legend_out(a)
+    fig2.suptitle("CoM tracking error with and without the tray task (grey: single support)")
+    return {"q3_tray_tilt_hand_tracking": fig1, "q3_com_error": fig2}
+
+
+# ------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    questions = {"q1": q1, "q2": q2}
+    questions = {"q1": q1, "q2": q2, "q3": q3}
     if len(sys.argv) != 2 or sys.argv[1] not in questions:
         sys.exit("usage: python3 experiments.py {%s}" % ",".join(questions))
     figures = questions[sys.argv[1]]()

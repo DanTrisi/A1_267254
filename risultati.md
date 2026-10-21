@@ -106,3 +106,37 @@ $$\frac{P(s)}{P^{ref}(s)} = \frac{K_p}{s^2 + K_d s + K_p},\qquad \omega_n = \sqr
 With feedforward the error obeys $\ddot e + K_d\dot e + K_p e = 0$, so ideally the hand would track exactly (ratio 1, lag 0). The lag is indeed small at every frequency (≤ 10°), but the amplitude decreases with the frequency (0.87 at 0.5 Hz, 0.43 at 2 Hz).
 
 The reason is the **CoM**. Romeo has a floating base: to accelerate the arm and the tray, the rest of the body receives the opposite reaction (momentum conservation), so the hand motion moves the CoM, while the CoM task wants to keep it still. The two tasks have the **same weight** ($w_{com} = w_{hand} = 1$), so the QP finds a compromise (eq. 2.36) and sacrifices part of the hand motion. The required hand acceleration is $A\omega^2$: 0.49 m/s² at 0.5 Hz and 7.9 m/s² at 2 Hz (16 times larger). Accordingly the max CoM displacement grows from 7 mm at 0.5 Hz to **5.5 cm** at 2 Hz and 10 cm at 2.5 Hz (`q2_com_displacement_ff.png`): at 2 Hz the CoM drifts by several cm in x and y, the hand oscillates around a lower mean height (`q2_hand_height_tracking.png`), and the reaction is so large that the right ankle reaches its torque limit, so the legs can no longer compensate it. Without feedforward the conflict is negligible (CoM displacement ≤ 3.6 mm) because the hand barely moves.
+
+---
+
+# Question 3 — Walking with the tray
+
+## Implementation
+
+Hand reference in `biped_walking.py` (`TODO`): at step $i$ of the walk, with $c^{ref}$ the CoM reference,
+$$p_h^{ref} = \begin{bmatrix} p_{h,0,x} + c^{ref}_x(i) - c^{ref}_x(0) \ p_{h,0,y} + c^{ref}_y(i) - c^{ref}_y(0) \ p_{h,0,z}\end{bmatrix},\qquad
+\dot p_h^{ref} = \begin{bmatrix}\dot c^{ref}_{x}(i)\ \dot c^{ref}_{y}(i)\ 0\end{bmatrix},\qquad
+\ddot p_h^{ref} = \begin{bmatrix}\ddot c^{ref}_{x}(i)\ \ddot c^{ref}_{y}(i)\ 0\end{bmatrix},\qquad R_h^{ref} = R_{h,0}$$
+i.e. the hand keeps its initial height and orientation and moves horizontally with the CoM reference, with consistent velocity and acceleration (feedforward). Before and after the walk ($i<0$, $i \ge N$) the CoM reference is constant, so the hand reference is constant with zero velocity/acceleration.
+
+Settings: `tray = True`, default reference file, `transition_time = 0.1` (with the fix of Q1), full mask, local frame.
+
+## Results
+
+| | `w_hand = 0` | `w_hand = 1` |
+| --- | --- | --- |
+| Walk completed | yes | yes |
+| Max tray tilt | 12.75° | **0.04°** |
+| Max hand position error | 66.2 mm | **8.8 mm** |
+| Hand height range | 97.6 mm | **13.5 mm** |
+| CoM error RMS / max | **2.9 / 6.8 mm** | 7.1 / 14.4 mm |
+| CoM error RMS x / y | 1.8 / 2.3 mm | 3.8 / 6.0 mm |
+| CoM error max x / y | 3.6 / 5.8 mm | 8.3 / 12.3 mm |
+| Max \|tau\|/tau_max | 0.99 (LKneePitch) | 0.94 (RKneePitch) |
+
+Figures: `q3_tray_tilt_hand_tracking.png`, `q3_com_error.png`.
+
+## Discussion
+
+- **Tray and hand**: without the hand task the arm is moved only by the posture task and by the motion of the body, so the tray tilts up to 12.8° and the hand goes up and down by ~10 cm at every step (it follows the lateral and vertical sway of the torso): the glasses would be spilled. With the hand task the tray stays horizontal (0.04°) and the hand tracks its reference within 9 mm (height range 13.5 mm).
+- **CoM tracking gets worse** (RMS 2.9 → 7.1 mm, max 6.8 → 14.4 mm, mostly along y and during single support, `q3_com_error.png`), although the arm and the empty tray are light. The cause is not the mass of the arm but the **kinematic coupling** between the tasks. The pose of the hand depends on the whole kinematic chain from the feet: legs, floating base (pelvis) and torso, i.e. the same DOFs that the CoM task uses to move the CoM. While walking the body has to sway laterally (the CoM moves by ±8 cm along y) and up and down; without the hand task this sway is transmitted to the hand (12.8° tilt, ~10 cm height oscillation). Keeping the hand still in height and orientation requires the robot to counteract the natural motion of its upper body, and these joint accelerations also affect the CoM. The two tasks are weighted cost functions with the **same weight** ($w_{com} = w_{hand} = 1$), so the QP finds a compromise (eq. 2.36): part of the CoM accuracy is sacrificed to keep the hand on its reference. In addition, the hand task is 6-dimensional and constrains many DOFs, leaving less redundancy to the CoM task.
