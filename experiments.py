@@ -18,6 +18,7 @@ import numpy as np
 import biped_walking
 import plot_utils as plut
 import romeo_conf
+import tray_sinusoid
 import tsid_biped
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -220,8 +221,98 @@ def q1():
 
 
 # ------------------------------------------------------------------------------------------------
+# Q2 - tray moved along a vertical sinusoid while standing
+# ------------------------------------------------------------------------------------------------
+def tray(frequency, feedforward, verbose=True):
+    conf = make_conf(tray=True, w_hand=1.0)   # as in tray_sinusoid.py
+    r = tray_sinusoid.simulate_tray_sinusoid(conf, frequency, feedforward)
+    if verbose:
+        print("\n=== Q2 tray sinusoid")
+        tray_sinusoid.print_tray_sinusoid(r)
+    return r, conf
+
+
+def pd_only_response(frequency, kp):
+    '''Hand/reference transfer function without feedforward: p'' = Kp (p_ref - p) - Kd p'  ->  Kp / (s^2 + Kd s + Kp).'''
+    s = 1j * 2 * np.pi * np.atleast_1d(np.asarray(frequency, dtype=float))
+    H = kp / (s**2 + 2 * np.sqrt(kp) * s + kp)
+    ratio, lag = np.abs(H), -np.degrees(np.unwrap(np.angle(H)))
+    return (ratio[0], lag[0]) if np.ndim(frequency) == 0 else (ratio, lag)
+
+
+def q2():
+    runs = {}
+    for f in [0.5, 2.0]:
+        for ff in [True, False]:
+            runs[(f, ff)], conf = tray(f, ff)
+    kp = conf.kp_hand
+    for f in [0.5, 2.0]:
+        ratio, lag = pd_only_response(f, kp)
+        print("theory without feedforward, f = %.1f Hz: amplitude ratio %.2f, phase lag %.1f deg" % (f, ratio, lag))
+    for f in [0.5, 2.0]:
+        print("required hand acceleration amplitude at %.1f Hz: %.2f m/s^2" % (f, 0.05 * (2 * np.pi * f)**2))
+
+    # frequency sweep (validation of the explanation)
+    freqs = [0.25, 0.5, 1.0, 1.5, 2.0, 2.5]
+    sweep = {ff: [tray(f, ff, verbose=False)[0] for f in freqs] for ff in [True, False]}
+    print("\nfrequency sweep:  f [Hz] | ratio/lag with FF | ratio/lag without FF | max CoM displ. with FF [mm]")
+    for i, f in enumerate(freqs):
+        a, b = sweep[True][i], sweep[False][i]
+        print("  %4.2f | %.2f / %5.1f | %.2f / %5.1f | %5.1f" % (f, a["ratio"], a["lag"], b["ratio"], b["lag"], 1e3 * a["com_disp_max"]))
+
+    # hand height tracking, 4 cases
+    fig1, ax = plut.create_empty_figure(2, 1)
+    fig1.set_size_inches(12, 7)
+    for a, f in zip(ax, [0.5, 2.0]):
+        r = runs[(f, True)]
+        z0 = r["hand_ref"][2, 0]
+        a.plot(r["t"], 1e3 * (r["hand_ref"][2] - z0), "k:", label="reference")
+        a.plot(r["t"], 1e3 * (r["hand"][2] - z0), "C0", label="hand, with feedforward")
+        a.plot(r["t"], 1e3 * (runs[(f, False)]["hand"][2] - z0), "C3--", label="hand, without feedforward")
+        a.set_ylabel("hand z - z0 [mm]\n%.1f Hz" % f)
+        legend_out(a)
+    ax[1].set_xlabel("Time [s]")
+    fig1.suptitle("Tray height (sinusoid of amplitude 5 cm)")
+
+    # frequency response: simulation vs PD-only theory
+    fs = np.linspace(0.1, 2.6, 200)
+    th_ratio, th_lag = pd_only_response(fs, kp)
+    fig2, ax = plut.create_empty_figure(2, 1)
+    fig2.set_size_inches(12, 7)
+    ax[0].plot(fs, th_ratio, "C3", label="theory without FF: $K_p/(s^2+K_ds+K_p)$")
+    ax[0].plot(freqs, [r["ratio"] for r in sweep[False]], "C3o", label="simulation without FF")
+    ax[0].plot(freqs, [r["ratio"] for r in sweep[True]], "C0s", label="simulation with FF")
+    ax[0].axhline(1.0, color="C0", linestyle=":", label="ideal with FF")
+    ax[0].set_ylabel("Amplitude ratio")
+    ax[1].plot(fs, th_lag, "C3", label="theory without FF")
+    ax[1].plot(freqs, [r["lag"] for r in sweep[False]], "C3o", label="simulation without FF")
+    ax[1].plot(freqs, [r["lag"] for r in sweep[True]], "C0s", label="simulation with FF")
+    ax[1].axhline(0.0, color="C0", linestyle=":", label="ideal with FF")
+    ax[1].set_ylabel("Phase lag [deg]")
+    ax[1].set_xlabel("Frequency [Hz]")
+    for a in ax:
+        a.axvline(np.sqrt(kp) / (2 * np.pi), color="grey", linestyle="--")
+        legend_out(a)
+    fig2.suptitle("Hand/reference frequency response ($K_p$ = %.0f, dashed: $\\omega_n = \\sqrt{K_p}$)" % kp)
+
+    # CoM displacement with feedforward
+    fig3, ax = plut.create_empty_figure(2, 1)
+    fig3.set_size_inches(12, 7)
+    for a, f in zip(ax, [0.5, 2.0]):
+        r = runs[(f, True)]
+        for i, lab in enumerate("xyz"):
+            a.plot(r["t"], 1e3 * (r["com"][i] - r["com_0"][i]), label="CoM " + lab)
+        a.set_ylabel("CoM displacement [mm]\n%.1f Hz, with FF" % f)
+        legend_out(a)
+    ax[1].set_xlabel("Time [s]")
+    fig3.suptitle("CoM displacement while moving the tray with feedforward")
+
+    return {"q2_hand_height_tracking": fig1, "q2_frequency_response": fig2, "q2_com_displacement_ff": fig3}
+
+
+# ------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    questions = {"q1": q1}
+    questions = {"q1": q1, "q2": q2}
     if len(sys.argv) != 2 or sys.argv[1] not in questions:
         sys.exit("usage: python3 experiments.py {%s}" % ",".join(questions))
     figures = questions[sys.argv[1]]()

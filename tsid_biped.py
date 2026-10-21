@@ -144,6 +144,12 @@ class TsidBiped:
         # the frame in which it is expressed (conf.hand_local_frame, see TaskSE3Equality.useLocalFrame)
         # and add it to the formulation with weight conf.w_hand and priority level conf.hand_priority
         # (only if conf.w_hand > 0 or the priority level is 0)
+        self.handTask.setKp(conf.kp_hand * np.ones(6))
+        self.handTask.setKd(2.0 * np.sqrt(conf.kp_hand) * np.ones(6))
+        self.handTask.setMask(np.asarray(conf.hand_mask, dtype=float))
+        self.handTask.useLocalFrame(conf.hand_local_frame)
+        if conf.w_hand > 0.0 or conf.hand_priority == 0:
+            formulation.addMotionTask(self.handTask, conf.w_hand, conf.hand_priority, 0.0)
 
         self.HAND = self.model.getFrameId(conf.hand_frame_name)
         self.H_hand_0 = robot.framePosition(data, self.HAND).copy()  # initial pose of the hand

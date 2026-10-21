@@ -30,7 +30,10 @@ def sinusoid_reference(t, center, amplitude, frequency):
     Returns position, velocity and acceleration (3d arrays).
     '''
     ### TODO ###
-    pos, vel, acc = center.copy(), np.zeros(3), np.zeros(3)
+    w = 2 * np.pi * frequency
+    pos = center + amplitude * np.sin(w * t)
+    vel = amplitude * w * np.cos(w * t)
+    acc = -amplitude * w**2 * np.sin(w * t)
     return pos, vel, acc
 
 
@@ -46,28 +49,27 @@ def amplitude_ratio_and_lag(t, x, x_ref, frequency):
     return ratio, (lag + 180.0) % 360.0 - 180.0
 
 
-if __name__ == "__main__":
-    conf = importlib.reload(romeo_conf)
-    conf.tray = True
-    conf.w_hand = 1.0  # the tray task must be active
-    tsid_biped = TsidBiped(conf, conf.viewer)
+def simulate_tray_sinusoid(conf, frequency=FREQUENCY, feedforward=FEEDFORWARD, amplitude=AMPLITUDE,
+                           duration=DURATION, viewer=None):
+    '''Robot standing on both feet, moving the tray along a sinusoid. Returns a dictionary with the logs.'''
+    tsid_biped = TsidBiped(conf, viewer)
     H_hand_0 = tsid_biped.H_hand_0
     com_0 = tsid_biped.robot.com(tsid_biped.formulation.data()).copy()
     tsid_biped.set_com_ref(com_0, 0 * com_0, 0 * com_0)
 
-    N = int(DURATION / conf.dt)
+    N = int(duration / conf.dt)
     t_log = np.arange(N) * conf.dt
     hand, hand_ref = np.full((3, N), np.nan), np.full((3, N), np.nan)
     com, tray_tilt = np.full((3, N), np.nan), np.full(N, np.nan)
 
-    if conf.viewer:
+    if viewer:
         input("Wait for the robot to appear in the browser, then press enter to start")
     q, v = tsid_biped.q, tsid_biped.v
     t = 0.0
     for i in range(N):
         time_start = time.time()
-        pos, vel, acc = sinusoid_reference(t, H_hand_0.translation, AMPLITUDE, FREQUENCY)
-        if not FEEDFORWARD:
+        pos, vel, acc = sinusoid_reference(t, H_hand_0.translation, amplitude, frequency)
+        if not feedforward:
             vel, acc = 0 * vel, 0 * acc
         tsid_biped.set_hand_ref(pos, H_hand_0.rotation, vel, acc)
 
@@ -88,7 +90,7 @@ if __name__ == "__main__":
         if norm(v) > 20.0:
             print("Time %.3f Velocities are too high, stop everything!" % t)
             break
-        if conf.viewer and i % conf.DISPLAY_N == 0:
+        if viewer and i % conf.DISPLAY_N == 0:
             tsid_biped.display(q)
             time_spent = time.time() - time_start
             if time_spent < conf.DISPLAY_N * conf.dt:
@@ -96,16 +98,33 @@ if __name__ == "__main__":
 
     # tracking indicators, along the direction of the motion and after the initial transient
     k = int(T_SKIP / conf.dt)
-    j = int(np.argmax(np.abs(AMPLITUDE)))
+    j = int(np.argmax(np.abs(amplitude)))
     if np.nanmax(np.abs(hand_ref[j, k:] - hand_ref[j, k])) < 1e-6:
         raise SystemExit("The reference of the hand does not move: complete sinusoid_reference()")
-    ratio, lag = amplitude_ratio_and_lag(t_log[k:], hand[j, k:], hand_ref[j, k:], FREQUENCY)
-    print("Frequency %.2f Hz, feedforward %s" % (FREQUENCY, FEEDFORWARD))
-    print("Amplitude ratio (hand / reference): %.2f" % ratio)
-    print("Phase lag [deg]:                    %.1f" % lag)
-    print("Hand tracking error RMS [m]:        %.4f" % np.sqrt(np.nanmean(np.sum((hand[:, k:] - hand_ref[:, k:])**2, 0))))
-    print("Max CoM displacement [m]:           %.4f" % np.nanmax(norm(com[:, k:] - com_0[:, None], axis=0)))
-    print("Max tray tilt [deg]:                %.2f" % np.nanmax(tray_tilt[k:]))
+    ratio, lag = amplitude_ratio_and_lag(t_log[k:], hand[j, k:], hand_ref[j, k:], frequency)
+    return dict(t=t_log, hand=hand, hand_ref=hand_ref, com=com, com_0=com_0, tray_tilt=tray_tilt,
+                frequency=frequency, feedforward=feedforward, ratio=ratio, lag=lag,
+                hand_err_rms=np.sqrt(np.nanmean(np.sum((hand[:, k:] - hand_ref[:, k:])**2, 0))),
+                com_disp_max=np.nanmax(norm(com[:, k:] - com_0[:, None], axis=0)),
+                tilt_max=np.nanmax(tray_tilt[k:]))
+
+
+def print_tray_sinusoid(r):
+    print("Frequency %.2f Hz, feedforward %s" % (r["frequency"], r["feedforward"]))
+    print("Amplitude ratio (hand / reference): %.2f" % r["ratio"])
+    print("Phase lag [deg]:                    %.1f" % r["lag"])
+    print("Hand tracking error RMS [m]:        %.4f" % r["hand_err_rms"])
+    print("Max CoM displacement [m]:           %.4f" % r["com_disp_max"])
+    print("Max tray tilt [deg]:                %.2f" % r["tilt_max"])
+
+
+if __name__ == "__main__":
+    conf = importlib.reload(romeo_conf)
+    conf.tray = True
+    conf.w_hand = 1.0  # the tray task must be active
+    r = simulate_tray_sinusoid(conf, FREQUENCY, FEEDFORWARD, AMPLITUDE, DURATION, conf.viewer)
+    print_tray_sinusoid(r)
+    t_log, hand, hand_ref, com, com_0, tray_tilt = (r[k] for k in ["t", "hand", "hand_ref", "com", "com_0", "tray_tilt"])
 
     (f, ax) = plut.create_empty_figure(3, 1)
     for i, lab in enumerate(["x", "y", "z"]):
