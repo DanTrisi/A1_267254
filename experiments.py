@@ -223,13 +223,39 @@ def q1():
 # ------------------------------------------------------------------------------------------------
 # Q2 - tray moved along a vertical sinusoid while standing
 # ------------------------------------------------------------------------------------------------
-def tray(frequency, feedforward, verbose=True):
+def tray(frequency, feedforward, verbose=True, ki=0.0):
     conf = make_conf(tray=True, w_hand=1.0)   # as in tray_sinusoid.py
-    r = tray_sinusoid.simulate_tray_sinusoid(conf, frequency, feedforward)
+    r = tray_sinusoid.simulate_tray_sinusoid(conf, frequency, feedforward, ki=ki)
     if verbose:
-        print("\n=== Q2 tray sinusoid")
+        print("\n=== Q2 tray sinusoid" + (", integral gain ki = %g" % ki if ki > 0 else ""))
         tray_sinusoid.print_tray_sinusoid(r)
     return r, conf
+
+
+KI_HAND = 20.0  # integral gain of the extra experiment q2i (stable: Kd*Kp = 63 > Ki)
+
+
+def q2i():
+    '''Extra (not in the report): Figure 7 of the report plus feedforward with an integral action.'''
+    runs = {}
+    for f in [0.5, 2.0]:
+        for ff, ki in [(True, 0.0), (False, 0.0), (True, KI_HAND)]:
+            runs[(f, ff, ki)], _ = tray(f, ff, ki=ki)
+    fig, ax = plut.create_empty_figure(2, 1)
+    fig.set_size_inches(12, 7)
+    for a, f in zip(ax, [0.5, 2.0]):
+        r = runs[(f, True, 0.0)]
+        z0 = r["hand_ref"][2, 0]
+        a.plot(r["t"], 1e3 * (r["hand_ref"][2] - z0), "k:", label="reference")
+        a.plot(r["t"], 1e3 * (r["hand"][2] - z0), "C0", label="hand, with feedforward")
+        a.plot(r["t"], 1e3 * (runs[(f, False, 0.0)]["hand"][2] - z0), "C3--", label="hand, without feedforward")
+        a.plot(r["t"], 1e3 * (runs[(f, True, KI_HAND)]["hand"][2] - z0), "C2",
+               label="hand, feedforward + integral ($K_i$ = %g)" % KI_HAND)
+        a.set_ylabel("hand z - z0 [mm]\n%.1f Hz" % f)
+        legend_out(a)
+    ax[1].set_xlabel("Time [s]")
+    fig.suptitle("Tray height (sinusoid of amplitude 5 cm), with integral action")
+    return {"q2_hand_height_tracking_integral": fig}
 
 
 def pd_only_response(frequency, kp):
@@ -546,7 +572,7 @@ def q5():
 
 # ------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    questions = {"q1": q1, "q2": q2, "q3": q3, "q4": q4, "q5": q5}
+    questions = {"q1": q1, "q2": q2, "q2i": q2i, "q3": q3, "q4": q4, "q5": q5}
     if len(sys.argv) != 2 or sys.argv[1] not in questions:
         sys.exit("usage: python3 experiments.py {%s}" % ",".join(questions))
     figures = questions[sys.argv[1]]()

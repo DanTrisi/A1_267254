@@ -50,8 +50,10 @@ def amplitude_ratio_and_lag(t, x, x_ref, frequency):
 
 
 def simulate_tray_sinusoid(conf, frequency=FREQUENCY, feedforward=FEEDFORWARD, amplitude=AMPLITUDE,
-                           duration=DURATION, viewer=None):
-    '''Robot standing on both feet, moving the tray along a sinusoid. Returns a dictionary with the logs.'''
+                           duration=DURATION, viewer=None, ki=0.0):
+    '''Robot standing on both feet, moving the tray along a sinusoid. Returns a dictionary with the logs.
+       ki > 0 adds an integral action on the hand position error, injected through the reference
+       acceleration: acc_ref + ki * int(p_ref - p) dt (TaskSE3Equality has only a PD).'''
     tsid_biped = TsidBiped(conf, viewer)
     H_hand_0 = tsid_biped.H_hand_0
     com_0 = tsid_biped.robot.com(tsid_biped.formulation.data()).copy()
@@ -65,13 +67,14 @@ def simulate_tray_sinusoid(conf, frequency=FREQUENCY, feedforward=FEEDFORWARD, a
     if viewer:
         input("Wait for the robot to appear in the browser, then press enter to start")
     q, v = tsid_biped.q, tsid_biped.v
+    e_int = np.zeros(3)  # integral of the hand position error (used only if ki > 0)
     t = 0.0
     for i in range(N):
         time_start = time.time()
         pos, vel, acc = sinusoid_reference(t, H_hand_0.translation, amplitude, frequency)
         if not feedforward:
             vel, acc = 0 * vel, 0 * acc
-        tsid_biped.set_hand_ref(pos, H_hand_0.rotation, vel, acc)
+        tsid_biped.set_hand_ref(pos, H_hand_0.rotation, vel, acc + ki * e_int)
 
         sol = tsid_biped.solver.solve(tsid_biped.formulation.computeProblemData(t, q, v))
         if sol.status != 0:
@@ -81,6 +84,7 @@ def simulate_tray_sinusoid(conf, frequency=FREQUENCY, feedforward=FEEDFORWARD, a
 
         H = tsid_biped.get_placement_hand()
         hand[:, i], hand_ref[:, i] = H.translation, pos
+        e_int += (pos - H.translation) * conf.dt
         com[:, i] = tsid_biped.robot.com(tsid_biped.formulation.data())
         R = H.rotation @ H_hand_0.rotation.T
         tray_tilt[i] = np.degrees(np.arccos(np.clip(R[2, 2], -1.0, 1.0)))
