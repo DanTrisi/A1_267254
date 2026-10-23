@@ -9,7 +9,9 @@ next case), runs the template, prints its indicators and saves the figures it pr
     python3 template_figures.py q1            # q1, q2, q3, q4, q5, or: all
     python3 template_figures.py q1 q3
 
+At launch the script asks (once) whether the figures must be saved, whatever the questions selected.
 Figures are saved as PDF in figures/template/ (files with the same name are overwritten).
+The legends are moved outside the plots, on the right.
 Question 5, part A (compare_payloads.py) also needs meshcat, but no browser: the viewer is not opened here.
 """
 import importlib
@@ -32,6 +34,7 @@ plt.rcParams["pdf.fonttype"] = 42           # embed fonts as TrueType in the PDF
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIG_DIR = os.path.join(HERE, "figures", "template")
+SAVE_FIGURES = True                         # set at launch by ask_save_figures()
 TRAY_WALK = dict(tray=True, transition_time=0.1)   # part 2: default reference file, ramp of question 1 with the fix
 
 # figures created by biped_walking.plot_walking, in this order
@@ -74,13 +77,36 @@ def template_add_contact():
         cls.add_contact_RF, cls.add_contact_LF = fixed
 
 
+def legends_outside(fig):
+    '''Move the legend of every axes of the figure outside the plot, on the right.'''
+    for ax in fig.axes:
+        if ax.get_legend() is None:
+            continue
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend(handles, labels, loc="upper left", bbox_to_anchor=(1.01, 1.0), borderaxespad=0.0)
+
+
+def ask_save_figures():
+    '''Ask the figures must be saved. '''
+    global SAVE_FIGURES
+    try:
+        answer = input("Save the figures in figures/template/? [Y/n]: ").strip().lower()
+    except EOFError:                         # no terminal: keep the default
+        answer = ""
+    SAVE_FIGURES = answer not in ("n", "no")
+    print("Figures will %sbe saved." % ("" if SAVE_FIGURES else "NOT "))
+
+
 def save_new_figures(before, names):
-    '''Save the figures created since `before` (in creation order) with the given names; None = do not save.'''
+    '''Save the figures created since `before` (in creation order) with the given names; None = do not save.
+       If the user chose not to save the figures, they are only closed.'''
     new = [n for n in plt.get_fignums() if n not in before]
     assert len(new) == len(names), "expected %d figures, found %d" % (len(names), len(new))
-    os.makedirs(FIG_DIR, exist_ok=True)
+    if SAVE_FIGURES:
+        os.makedirs(FIG_DIR, exist_ok=True)
     for num, name in zip(new, names):
-        if name is None:
+        # legends_outside(plt.figure(num)) doesn't look good 
+        if name is None or not SAVE_FIGURES:
             continue
         path = os.path.join(FIG_DIR, name + ".pdf")
         plt.figure(num).savefig(path, bbox_inches="tight")
@@ -97,9 +123,11 @@ def walk(label, saved, tray=False, **overrides):
     before = set(plt.get_fignums())
     print("\n=== " + label)
     log = biped_walking.simulate_walking(conf, viewer=None, verbose=False)
-    biped_walking.print_metrics(biped_walking.compute_metrics(log, conf))
+    metrics = biped_walking.compute_metrics(log, conf)
+    biped_walking.print_metrics(metrics)
     biped_walking.plot_walking(log, conf)
     save_new_figures(before, names)
+    return metrics
 
 
 # ------------------------------------------------------------------------------------------------
@@ -155,17 +183,28 @@ def q3():
 
 
 Q4_CASES = [  # (name, mask [x, y, z, rot_x, rot_y, rot_z], local frame)
+    ("q4_pose_local", [1, 1, 1, 1, 1, 1], True),
     ("q4_position_local", [1, 1, 1, 0, 0, 0], True),
-    ("q4_orientation_local", [0, 0, 0, 1, 1, 1], True),
+    ("q4_attitude_local", [0, 0, 0, 1, 1, 1], True),
     ("q4_waiter_local", [0, 0, 1, 1, 1, 0], True),
     ("q4_waiter_world", [0, 0, 1, 1, 1, 0], False),
 ]
 
 
 def q4():
+    '''Masks of the tray task. Position-only and orientation-only are tested in the world-aligned frame;
+       the waiter mask is tested in both frames. Indicators of all cases are summarised at the end.'''
+    results = []
     for name, mask, local in Q4_CASES:
-        walk("Q4 mask %s, local frame %s" % (mask, local), dict(hand=name + "_hand"), w_hand=1.0,
-             hand_mask=np.array(mask, dtype=float), hand_local_frame=local, **TRAY_WALK)
+        m = walk("Q4 mask %s, local frame %s" % (mask, local), dict(hand=name + "_hand"), w_hand=1.0,
+                 hand_mask=np.array(mask, dtype=float), hand_local_frame=local, **TRAY_WALK)
+        results.append((name, m))
+    print("\n=== Q4 summary")
+    print("%-24s %10s %14s %16s %16s" % ("case", "completed", "tilt max [deg]", "hand z range [m]",
+                                         "CoM err RMS [m]"))
+    for name, m in results:
+        print("%-24s %10s %14.2f %16.4f %16.4f" % (name, m["completed"], m["tray_tilt_max"], m["hand_z_range"],
+                                                  m["com_err_rms"]))
 
 
 def q5():
@@ -208,6 +247,7 @@ if __name__ == "__main__":
     selected = list(questions) if args == ["all"] else args
     if not selected or any(q not in questions for q in selected):
         sys.exit("usage: python3 template_figures.py {all,%s} [...]" % ",".join(questions))
+    ask_save_figures()                     
     for q in selected:
         print("\n" + "#" * 25 + " " + q + " " + "#" * 25)
         questions[q]()
