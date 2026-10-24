@@ -37,11 +37,12 @@
   Daniele Trisotto (267254), \quad Michele Macellari (267255)
 \end{center}
 
-All figures and indicators are produced from the repository root with
+
+All figures and indicators are produced running \texttt{template\_figures.py} with:
 \begin{center}
   \colorbox{gray!12}{\strut\enspace\texttt{python3 template\_figures.py q1}\quad\textcolor{gray}{\# or q2, q3, q4, q5, all}\enspace}
 \end{center}
-which runs the templates with the parameters of each question (no viewer, default \code{romeo\_conf.py} plus the listed overrides).
+which runs the templates with the parameters of each question (no viewer, default \code{romeo\_conf.py} plus the listed overrides). code implementations required for the questions are located within the \texttt{\#\#TODO\#\#} sections of the provided templates (\texttt{biped\_walking.py}, \texttt{tsid\_biped.py}, and \texttt{tray\_sinusoid.py}).
 
 \section{Walking with double support}
 \textbf{Weight Transfer.} In single support the stance foot carries the whole weight and the swing foot 0\,N (\fig{q1ds}). The reference CoP stays under the stance foot ($y=\pm0.096$\,m) and. Without DS the CoP jumps by 19.2\,cm in one 2\,ms step and the whole weight is transferred in one step (\fig{q1ds}). With a single contact the CoP must stay inside that sole, so without a phase with two contacts it can only jump. Hence, the max normal force change rate is 11 times larger without DS (195\,kN/s vs 17.8\,kN/s) and so is that of the joint torque (28.8 vs 6.3\,kNm/s).
