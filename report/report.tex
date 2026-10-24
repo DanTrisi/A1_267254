@@ -23,6 +23,9 @@
 \setlength{\parskip}{2pt}
 \setlength{\parindent}{0pt}
 \captionsetup{font=small}
+\captionsetup[table]{skip=3pt}
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}
 \newcommand{\fig}[1]{Fig.~\ref{fig:#1}}
 \newcommand{\code}[1]{\texttt{#1}}
 
@@ -34,14 +37,18 @@
   Daniele Trisotto (267254), \quad Michele Macellari (267255)
 \end{center}
 
-All figures are produced by \code{python3 template\_figures.py qN}, which runs the plotting code of the templates (\code{biped\_walking.py}, \code{tray\_sinusoid.py}, \code{compare\_payloads.py}) with the parameters of each question (no viewer, default \code{romeo\_conf.py} plus the listed overrides); the indicators are those printed by the templates.
+All figures and indicators are produced from the repository root with
+\begin{center}
+  \colorbox{gray!12}{\strut\enspace\texttt{python3 template\_figures.py q1}\quad\textcolor{gray}{\# or q2, q3, q4, q5, all}\enspace}
+\end{center}
+which runs the templates with the parameters of each question (no viewer, default \code{romeo\_conf.py} plus the listed overrides).
 
 \section{Walking with double support}
 \textbf{Weight Transfer.} In single support the stance foot carries the whole weight and the swing foot 0\,N (\fig{q1ds}). The reference CoP stays under the stance foot ($y=\pm0.096$\,m) and. Without DS the CoP jumps by 19.2\,cm in one 2\,ms step and the whole weight is transferred in one step (\fig{q1ds}). With a single contact the CoP must stay inside that sole, so without a phase with two contacts it can only jump. Hence, the max normal force change rate is 11 times larger without DS (195\,kN/s vs 17.8\,kN/s) and so is that of the joint torque (28.8 vs 6.3\,kNm/s).
 
-\textbf{Real Robot.} Without DS the walk works only because the simulation is ideal: the state is integrated from the QP accelerations (the robot does exactly what TSID computes), contacts are rigid and instantaneous and the touchdown time is exact. On a real robot torques cannot change in 2\,ms (due actuator bandwidth), the swing foot would take the whole weight during the impact, an early/late touchdown (model errors, uneven ground) would transfer the weight to a foot not yet on the ground, and noisy, delayed force sensors cannot confirm the contact so quickly.
+\textbf{Real Robot.} Without DS the walk works only because the simulation is ideal: the state is integrated from the QP accelerations, contacts are rigid and instantaneous and the touchdown time is exact. On a real robot torques cannot change in 2\,ms (actuator bandwidth), the swing foot would take the whole weight during the impact, an early/late touchdown (model errors, uneven ground) would transfer the weight to a foot not yet on the ground, and noisy, delayed force sensors cannot confirm the contact so quickly.
 
-\textbf{Fall with \code{Transition\_Time = 0.1} and Fix.} \code{removeRigidContact(name, 0.1)} keeps the contact for 0.1\,s while decreasing linearly its maximum normal force $f_{max}$ to 0, then removes it; the ramp leaves $f_{max}=0$ inside the \code{Contact6d}, and \code{addRigidContact} re-adds the same object without restoring it. In \fig{q1fall} the left foot is removed at the start ($f_{max}^{LF}\to0$ at 1.4\,s); at touchdown (2.5\,s) the constraint $0\le f_N\le f_{max}=0$ forbids it to carry any load, so when the right foot is lifted the robot falls (2.81\,s). Fix: \code{contactRF/LF.setMaxNormalForce(conf.fMax)} in \code{add\_contact\_RF/LF} before \code{addRigidContact}; the walk is then completed (\fig{q1fixed}). The ramp makes only little difference with this gait: same CoM error (2.9/6.8\,mm RMS/max), force rate $17.8\to15.0$\,kN/s, torque rate $6.3\to4.6$\,kNm/s. The weight is already transferred by the DS through the CoP: when the ramp starts (2.6\,s) the actual force is already below it, so it is active only in the last $\approx$20\,ms. (Without DS the ramp makes the robot fall even with the fix: the only stance foot would be unloaded.)
+\textbf{Fall with \code{transition\_time = 0.1} and Fix.} \code{removeRigidContact(name, 0.1)} keeps the contact for 0.1\,s while decreasing linearly its maximum normal force $f_{max}$ to 0, then removes it; the ramp leaves $f_{max}=0$ inside the \code{Contact6d}, and \code{addRigidContact} re-adds the same object without restoring it. In \fig{q1fall} the left foot is removed at the start ($f_{max}^{LF}\to0$ at 1.4\,s); at touchdown (2.5\,s) the constraint $0\le f_N\le f_{max}=0$ forbids it to carry any load, so when the right foot is lifted the robot falls (2.81\,s). Fix: \code{contactRF/LF.setMaxNormalForce(conf.fMax)} in \code{add\_contact\_RF/LF} before \code{addRigidContact}; the walk is then completed (\fig{q1fixed}). The ramp makes only little difference with this gait: same CoM error (2.9/6.8\,mm RMS/max), force rate $17.8\to15.0$\,kN/s, torque rate $6.3\to4.6$\,kNm/s. The weight is already transferred by the DS through the CoP: when the ramp starts (2.6\,s) the actual force is already below it, so it is active only in the last $\approx$20\,ms. (Without DS the ramp makes the robot fall even with the fix: the only stance foot would be unloaded.)
 
 \begin{table}[H]
   \centering\small
@@ -54,16 +61,16 @@ All figures are produced by \code{python3 template\_figures.py qN}, which runs t
     DS, $T_{tr} = 0.1$\,s & 2.9/6.8\,mm       & 15.0\,kN/s      & 4.6\,kNm/s       \\
     \bottomrule
   \end{tabular}
-  \caption{Q1, CoM error (RMS/Max) and inputs max change rate with and without DSk, and DS with \code{transition\_time = 0.0}\,s ($T_{tr}$) after the fix.}
+  \caption{Q1, CoM error and maximum rate of change of normal forces and torques ($T_{tr}$ = \code{transition\_time}, 0 if not shown; with the fix).}
   \label{table:Q1}
 \end{table}
 
 \section{Tray along a sinusoid}
 Hand task: \code{TaskSE3Equality}, $K_p=10$, $K_d=2\sqrt{K_p}$, mask and frame from the conf, added only if \code{w\_hand>0.0} or \code{hand\_priority = 0}. Reference: $p=c+A\sin\omega t$, $\dot p = A\omega\cos\omega t$, $\ddot p=-A\omega^2\sin\omega t$.
 
-\textbf{Without Feedforward.} $\dot p^{ref}=\ddot p^{ref}=0$ and only $\ddot p^d = K_p(p^{ref}-p)-K_d\dot p$ is left: the hand moves only because of the position error, so it lags behind and moves less. It is a critically damped low-pass filter $P/P^{ref}=K_p/(s^2+K_ds+K_p)$ with $\omega_n=\sqrt{K_p}\approx0.5$\,Hz: at 0.5\,Hz ($=\omega_n$) theory gives 0.50/89.6$^\circ$, at 2\,Hz ($\approx4\omega_n$, attenuation $\propto K_p/\omega^2$) 0.06/151.8$^\circ$; the simulated values in the table match the theory (\fig{q2track}).
+\textbf{Without Feedforward.} $\dot p^{ref}=\ddot p^{ref}=0$ and only $\ddot p^d = K_p(p^{ref}-p)-K_d\dot p$ is left: the hand moves only because of the position error, so it lags behind and moves less. It is a critically damped low-pass filter $P/P^{ref}=K_p/(s^2+K_ds+K_p)$ with $\omega_n=\sqrt{K_p}\approx0.5$\,Hz: at 0.5\,Hz ($=\omega_n$) theory gives 0.50/89.6$^\circ$, at 2\,Hz ($\approx4\omega_n$, attenuation $\propto K_p/\omega^2$) 0.06/151.8$^\circ$; the simulated values (\Cref{table:Q2}) match the theory (\fig{q2track}).
 
-\textbf{With Feedforward.} ideally $\ddot e+K_d\dot e+K_pe=0$ (perfect tracking, $e = p^{ref}-p$): the lag is indeed small ($\le10^\circ$) but the amplitude drops at high frequency. The reason is the CoM: the base is floating, so accelerating the arm and tray pushes the rest of the body and moves the CoM, while the CoM task, with the same weight ($w_{com}=w_{hand}=1$), wants to keep it still; the QP compromises. The required acceleration $A\omega^2$ is 16 times larger at 2\,Hz (7.9 vs 0.49\,m/s$^2$): the CoM moves by 5.5\,cm (vs 7\,mm) and drifts, the hand oscillates around a lower height, and the right ankle reaches its torque limit (\fig{q2com}, \fig{q2track}).
+\textbf{With Feedforward.} Ideally $\ddot e+K_d\dot e+K_pe=0$ (perfect tracking, $e = p^{ref}-p$): the lag is indeed small ($\le10^\circ$) but the amplitude drops at high frequency. The reason is the CoM: the base is floating, so accelerating the arm and tray pushes the rest of the body and moves the CoM, while the CoM task, with the same weight ($w_{com}=w_{hand}=1$), wants to keep it still; the QP compromises. The required acceleration $A\omega^2$ is 16 times larger at 2\,Hz (7.9 vs 0.49\,m/s$^2$): the CoM moves by 5.5\,cm (vs 7\,mm) and drifts, the hand oscillates around a lower height, and the right ankle reaches its torque limit (\fig{q2com}, \fig{q2track}).
 
 \begin{table}[H]
   \begin{center}\small
@@ -81,7 +88,7 @@ Hand task: \code{TaskSE3Equality}, $K_p=10$, $K_d=2\sqrt{K_p}$, mask and frame f
 \end{table}
 
 \section{Walking with the tray}
-Hand reference: initial height and orientation, $x$/$y$ = initial hand position + displacement of the CoM reference, velocity/acceleration = those of the CoM reference (zero along $z$). In \cref{table:Q3} the results of the simulation (with and without hand task) are shown. When the hand task is active the CoM worsen (mostly along $y$) (\fig{q3hand}, \fig{q3com}). The cause is not the mass of the arm but the kinematic coupling: the hand pose depends on legs, pelvis and torso, the same DOFs used by the CoM task. Walking makes the body sway ($\pm8$\,cm laterally) and, without the hand task, this sway is transferred the tray; keeping the hand still requires counteracting the upper-body motion, which also moves the CoM. With equal weights the QP sacrifices part of the CoM tracking, and the 6D hand task leaves less redundancy to the CoM task.
+Hand reference: initial height and orientation, $x$/$y$ = initial hand position + displacement of the CoM reference, velocity/acceleration = those of the CoM reference (zero along $z$). \Cref{table:Q3} compares the walk without and with the hand task: the tray stays horizontal and the hand follows its reference, but the CoM tracking gets worse, mostly along $y$ (\fig{q3hand}, \fig{q3com}). The cause is not the mass of the arm but the kinematic coupling: the hand pose depends on legs, pelvis and torso, the same DOFs used by the CoM task. Walking makes the body sway ($\pm8$\,cm laterally) and, without the hand task, this sway is transferred to the tray; keeping the hand still requires counteracting the upper-body motion, which also moves the CoM. With equal weights the QP sacrifices part of the CoM tracking, and the 6D hand task leaves less redundancy to the CoM task.
 
 \begin{table}[H]
   \centering\small
@@ -99,7 +106,7 @@ Hand reference: initial height and orientation, $x$/$y$ = initial hand position 
 
 \section{Mask and frame of the tray task}
 
-Position only: the orientation is free and the tray tilts up to 22$^\circ$. Attitude only: the tray is horizontal but the hand moves by 86\,mm with the body. The waiter needs constant height and no rotation about the horizontal axes, while $x$, $y$ and the yaw angle are free, leading to the mask $[0,0,1,1,1,0]$, a requirement defined in the \emph{world} frame (\fig{q4time}). In the world-aligned frame the mask selects exactly height and tilt: the requirement is met as with the full mask (0.03$^\circ$, 10.5\,mm) with half the CoM error (3.6 vs 7.1\,mm), since only 3 DOFs are constrained. In the local frame the same mask selects components along the hand axes, which are not aligned with the world (the hand $z$ axis is 53$^\circ$ from the vertical) and rotate with the hand: freeing $r_z$ frees part of the tilt and freeing $x$-$y$ frees part of the vertical motion (8.9$^\circ$, 78\,mm). With the full mask the frame is irrelevant (identical results): the error is the same vector in different axes and, with equal gains, its norm does not change.
+Results in \Cref{table:Q4} and \fig{q4time}. Position only: the orientation is free and the tray tilts up to 22$^\circ$. Attitude only: the tray is horizontal but the hand moves by 86\,mm with the body. The waiter needs constant height and no rotation about the horizontal axes, while $x$, $y$ and the yaw angle are free, leading to the mask $[0,0,1,1,1,0]$, a requirement defined in the \emph{world} frame. In the world-aligned frame the mask selects exactly height and tilt: the requirement is met as with the full mask (0.03$^\circ$, 10.5\,mm) with half the CoM error (3.6 vs 7.1\,mm), since only 3 DOFs are constrained. In the local frame the same mask selects components along the hand axes, which are not aligned with the world (the hand $z$ axis is 53$^\circ$ from the vertical) and rotate with the hand: freeing $r_z$ frees part of the tilt and freeing $x$-$y$ frees part of the vertical motion (8.9$^\circ$, 78\,mm). With the full mask the frame is irrelevant (identical results): the error is the same vector in different axes and, with equal gains, its norm does not change.
 
 \begin{table}[H]
   \begin{center}\small
@@ -115,7 +122,7 @@ Position only: the orientation is free and the tray tilts up to 22$^\circ$. Atti
       \bottomrule
     \end{tabular}
   \end{center}
-  \caption{Q4, Results for the different hand masks and the frames in which are computed.}
+  \caption{Q4, results for the different hand masks and frames (the full mask gives identical results in the world-aligned frame).}
   \label{table:Q4}
 \end{table}
 \section{Heavy trays}
