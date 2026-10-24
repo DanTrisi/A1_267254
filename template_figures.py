@@ -10,8 +10,8 @@ next case), runs the template, prints its indicators and saves the figures it pr
     python3 template_figures.py q1 q3
 
 At launch the script asks (once) whether the figures must be saved, whatever the questions selected.
-Figures are saved as PDF in figures/template/ (files with the same name are overwritten).
-The legends are moved outside the plots, on the right.
+Figures are saved as PDF in figures/template/.
+The legends may be also moved outside the plots.
 Question 5, part A (compare_payloads.py) also needs meshcat, but no browser: the viewer is not opened here.
 """
 import importlib
@@ -87,7 +87,7 @@ def legends_outside(fig):
 
 
 def ask_save_figures():
-    '''Ask the figures must be saved. '''
+    '''Ask the if figures must be saved. '''
     global SAVE_FIGURES
     try:
         answer = input("Save the figures in figures/template/? [Y/n]: ").strip().lower()
@@ -182,7 +182,8 @@ def q3():
         walk("Q3 tray, w_hand = %g" % w_hand, dict(com=tag + "_com", hand=tag + "_hand"), w_hand=w_hand, **TRAY_WALK)
 
 
-Q4_CASES = [  # (name, mask [x, y, z, rot_x, rot_y, rot_z], local frame)
+Q4_CASES = [  
+    ''' Definition of the different masks of question 4, as well as the used frame. (name, mask [x, y, z, rot_x, rot_y, rot_z], local frame)'''
     ("q4_pose_local", [1, 1, 1, 1, 1, 1], True),
     ("q4_position_local", [1, 1, 1, 0, 0, 0], True),
     ("q4_attitude_local", [0, 0, 0, 1, 1, 1], True),
